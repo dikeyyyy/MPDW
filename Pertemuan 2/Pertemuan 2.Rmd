@@ -1,0 +1,232 @@
+---
+title: "Tugas Pertemuan 2 - Regresi"
+author: G1401231097 Zanira Husna
+output:
+  html_document:
+    theme: yeti
+    toc: true
+    toc_float: true
+  word_document: default
+  pdf_document: default
+---
+
+# Pemanggilan *Packages*
+
+```{r}
+install.packages("https://cran.r-project.org/src/contrib/Archive/orcutt/orcutt_2.1.tar.gz", repos = NULL, type = "source")
+```
+
+```{r}
+#install.packages("orcutt")
+#install.packages("HoRM")
+```
+
+```{r}
+library(dplyr)
+library(TTR)
+library(forecast)
+library(lmtest) #digunakan untuk uji formal pendeteksian autokorelasi
+library(orcutt) #untuk membuat model regresi Cochrane-Orcutt
+library(HoRM) #untuk membuat model regresi Hildreth-Lu
+```
+
+# Input Data
+
+Data yang digunakan adalah data IPM Kota Depok periode tahun 2010-2024.
+
+```{r}
+library(readxl)
+data <- read_xlsx("C:\\Users\\ZANIRA\\Downloads\\[Metode Baru] Indeks Pembangunan Manusia, 2024.xlsx")
+str(data)
+```
+
+# Eksplorasi Data
+
+Sebelum melakukan regresi, akan diperlihatkan *plot time-series* dari IPM Kota Depok Periode 2010-2024
+
+```{r}
+#Membentuk objek time series
+data.ts<-ts(data$IPM)
+data.ts
+```
+
+
+```{r}
+#Membuat plot time series
+ts.plot(data.ts, xlab="Time Period ", ylab="IPM", main= "Time Series Plot of IPM")
+points(data.ts)
+```
+
+terlihat pada plot di atas menunjukkan adanya *trend*.
+
+# Pemodelan regresi
+
+```{r}
+modelipm <- lm(IPM ~ Tahun, data = data)
+summary(modelipm)
+```
+
+R-squared:  0.9925, menunjukkan korelasi antar peubah positif tinggi
+
+```{r}
+#sisaan dan fitted value
+sisaan<- residuals(modelipm)
+fitValue<- predict(modelipm)
+
+#Diagnostik dengan eksploratif
+par(mfrow = c(2,2))
+qqnorm(sisaan)
+qqline(sisaan, col = "steelblue", lwd = 2)
+plot(fitValue, sisaan, col = "steelblue", pch = 20, xlab = "Sisaan", ylab = "Fitted Values", main = "Sisaan vs Fitted Values")
+abline(a = 0, b = 0, lwd = 2)
+hist(sisaan, col = "steelblue")
+plot(seq(1,15,1), sisaan, col = "steelblue", pch = 20, xlab = "Sisaan", ylab = "Order", main = "Sisaan vs Order")
+lines(seq(1,15,1), sisaan, col = "red")
+abline(a = 0, b = 0, lwd = 2)
+```
+
+Dua plot di samping kiri digunakan untuk melihat apakah sisaan menyebar normal. Normal Q-Q Plot di atas menunjukkan bahwa sisaan cenderung menyebar normal, tetapi histogram dari sisaan tidak menunjukkan demikian. Selanjutnya, dua plot di samping kanan digunakan untuk melihat autokorelasi. Plot Sisaan vs *Fitted Value* dan Plot Sisaan vs *Order* menunjukkan adanya pola pada sisaan. Untuk lebih lanjut akan digunakan uji formal melihat normalitas sisaan dan plot ACF dan PACF untuk melihat apakah ada autokorelasi atau tidak.
+
+```{r}
+par(mfrow = c(1, 2))
+acf(data.ts)
+pacf(data.ts)
+```
+
+menunjukkan autokorelasi pada lag 0-2 di ACF dan Lag 0 pada PACF
+
+```{r}
+#Melihat Sisaan Menyebar Normal/Tidak
+#H0: sisaan mengikuti sebaran normal
+#H1: sisaan tidak mengikuti sebaran normal
+shapiro.test(sisaan)
+ks.test(sisaan, "pnorm", mean=mean(sisaan), sd=sd(sisaan))
+```
+
+Berdasarkan uji formal Saphiro-Wilk dan Kolmogorov-Smirnov didapatkan nilai *p-value* \> $\alpha$ (5%). Artinya, cukup bukti untuk menyatakan sisaan berdistribusi normal.
+
+```{r}
+dwtest(modelipm)
+```
+
+Menunjukkan adanya autokorelasi positif, karena nilai DW kurang dari 2.
+diperlukan penangan autokorelasi. Penanganan yang akan digunakan menggunakan dua metode, yaitu Cochrane-Orcutt dan Hildret-Lu.
+
+# Penanganan Autokorelasi
+
+## Metode Cochrane-Orcutt
+
+Penanganan metode Cochrane-Orcutt dapat dilakukan dengan bantuan packages Orcutt pada aplikasi `R` maupun secara manual. Berikut ini ditampilkan cara menggunakan bantuan `library` *packages* `Orcutt`.
+
+```{r}
+#Penanganan Autokorelasi Cochrane-Orcutt
+modelCO<-cochrane.orcutt(modelipm)
+modelCO
+```
+
+Hasil keluaran model setelah dilakukan penanganan adalah sebagai berikut. $$y_i=-800.508014+0.436446x_t$$. Nilai p-value 0.306 menunjukkan bahwa sudah tidak terdapat autokorelasi setelah  Penanganan Cochrane-Orcutt
+
+```{r}
+#Rho optimum
+rho<- modelCO$rho
+rho
+```
+
+```{r}
+#Transformasi Manual
+ipm.trans<- data$IPM[-1]-data$IPM[-12]*rho
+tahun.trans<- data$Tahun[-1]-data$Tahun[-12]*rho
+modelCOmanual<- lm(ipm.trans~tahun.trans)
+summary(modelCOmanual)
+```
+
+
+## Metode Hildreth-Lu
+
+Penanganan kedua adalah menggunakan metode Hildreth-Lu. Metode ini akan mencari nilai SSE terkecil dan dapat dicari secara manual maupun menggunakan packages. Jika menggunakan packages, gunakan `library` *packages* `HORM`.
+
+```{r}
+# Model awal
+model <- lm(IPM ~ Tahun, data = data)
+
+# Fungsi Hildreth-Lu
+hildreth.lu.func <- function(r, model){
+  x <- model.matrix(model)[, -1]   # variabel prediktor (Tahun)
+  y <- model.response(model.frame(model))
+  n <- length(y)
+  t <- 2:n
+  
+  # Transformasi Hildreth-Lu
+  y <- y[t] - r * y[t - 1]
+  x <- x[t] - r * x[t - 1]
+  
+  return(lm(y ~ x))
+}
+
+# Pencarian rho yang meminimumkan SSE
+r <- seq(0.1, 0.9, by = 0.1)
+tab <- data.frame(
+  rho = r,
+  SSE = sapply(r, function(i){
+    deviance(hildreth.lu.func(i, model))
+  })
+)
+
+round(tab, 4)
+```
+
+
+Pertama-tama akan dicari di mana kira-kira $ρ$ yang menghasilkan SSE minimum. Pada hasil di atas terlihat $ρ$ minimum ketika 0.4. Namun, hasil tersebut masih kurang teliti sehingga akan dicari kembali $ρ$ yang lebih optimum dengan ketelitian yang lebih. Jika sebelumnya jarak antar $ρ$ yang dicari adalah 0.1, kali ini jarak antar $ρ$ adalah 0.001 dan dilakukan pada selang 0.2 sampai dengan 0.5.
+
+```{r}
+#Rho optimal di sekitar 0.4
+rOpt <- seq(0.2,0.5, by= 0.001)
+tabOpt <- data.frame("rho" = rOpt, "SSE" = sapply(rOpt, function(i){deviance(hildreth.lu.func(i, model))}))
+head(tabOpt[order(tabOpt$SSE),])
+
+#Grafik SSE optimum
+par(mfrow = c(1,1))
+plot(tab$SSE ~ tab$rho , type = "l", xlab = "Rho", ylab = "SSE")
+abline(v = tabOpt[tabOpt$SSE==min(tabOpt$SSE),"rho"], lty = 2, col="red",lwd=2)
+text(x=0.341, y=0.2397500, labels = "rho=0.341", cex = 0.8)
+```
+
+Perhitungan yang dilakukan aplikasi `R` menunjukkan bahwa nilai $ρ$ optimum, yaitu saat SSE terkecil terdapat pada 0,356. Hal tersebut juga ditunjukkan pada plot. Selanjutnya, model dapat didapatkan dengan mengevaluasi nilai $ρ$ ke dalam fungsi `hildreth.lu.func`, serta dilanjutkan dengan pengujian autokorelasi dengan uji Durbin-Watson. Namun, setelah pengecekan tersebut tidak lupa koefisien regresi tersebut digunakan untuk transformasi balik. Persamaan hasil transformasi itulah yang menjadi persamaan sesungguhnya.
+
+```{r}
+#Model terbaik
+modelHL <- hildreth.lu.func(0.356, model)
+summary(modelHL)
+
+#Transformasi Balik
+cat("y = ", coef(modelHL)[1]/(1-0.356), "+", coef(modelHL)[2],"x", sep = "")
+```
+
+Setelah dilakukan tranformasi balik, didapatkan model dengan metode Hildreth-Lu sebagai berikut. $$y = -800.5075+0.4364458x$$
+
+```{r}
+#Deteksi autokorelasi
+dwtest(modelHL)
+```
+
+Hasil uji Durbin-Watson juga menunjukkan bawah nilai DW sebesar $1.8802$ berada pada selang daerah tidak ada autokorelasi. Hal tersebut juga didukung oleh *p-value* sebesar $0.2872$, cukup bukti menyatakan bahwa tidak ada autokorelasi dalam data nilai IPM dengan metode Hildreth-Lu pada taraf nyata 5%.
+
+# Perbandingan dan hasil
+Terakhir, akan dibandingkan nilai SSE dari ketiga metode (metode awal, metode Cochrane-Orcutt, dan Hildreth-Lu).
+
+```{r}
+#Perbandingan
+sseModelawal <- anova(modelipm)$`Sum Sq`[-1]
+sseModelCO <- anova(modelCOmanual)$`Sum Sq`[-1]
+sseModelHL <- anova(modelHL)$`Sum Sq`[-1]
+mseModelawal <- sseModelawal/length(data$IPM)
+mseModelCO <- sseModelCO/length(data$IPM)
+mseModelHL <- sseModelHL/length(data$IPM)
+akurasi <- matrix(c(sseModelawal,sseModelCO,sseModelHL,
+                    mseModelawal,mseModelCO,mseModelHL),nrow=2,ncol=3,byrow = T)
+colnames(akurasi) <- c("Model Awal", "Model Cochrane-Orcutt", "Model Hildreth-Lu")
+row.names(akurasi) <- c("SSE","MSE")
+akurasi
+```
+
+Berdasarkan hasil tersebut dapat diketahui bahwa hasil penanganan autokorelasi dengan metode Cochrane-Orcutt dan Hildreth-Lu memiliki SSE yang mirip, sebesar $0.35$ dan lebih baik dibandingkan model awal ketika autokorelasi masih terjadi, yaitu sebesar $0.40705583$. Sehingga kedua metode menunjukkan performa yang sama-sama lebih baik untuk menangani autokorelasi daripada model awal. Penggunaan kedua metode tergantung pada preferensi dari penggunanya lebih menyukai metode apa. 
