@@ -1,0 +1,404 @@
+---
+title: "Tugas-Pertemuan-3"
+author: "Zanira Husna G1401231097"
+output:
+  html_document:
+    theme: yeti
+    toc: true
+    toc_float: true
+  word_document: default
+  pdf_document: default
+---
+
+## *Packages*
+
+```{r, message= FALSE, warning= FALSE, echo=FALSE}
+library(dLagM)
+library(dynlm)
+library(MLmetrics)
+library(lmtest)
+library(car)
+```
+
+# Impor Data
+
+```{r}
+data <- read.csv("C:\\Users\\ZANIRA\\Downloads\\NewDelhi_Air_quality.csv")
+str(data)
+data
+```
+
+# Pembagian Data
+
+```{r}
+subset_data <- data[, c("AQI", "pm25")]
+colnames(subset_data) <- c("Y", "X")
+
+str(subset_data)
+```
+
+```{r}
+colSums(is.na(subset_data))
+```
+
+```{r}
+#SPLIT DATA
+n <- nrow(subset_data)
+
+# tentukan batas 80%
+n_train <- floor(0.8 * n)
+
+# bagi data
+train <- subset_data[1:n_train, ]
+test  <- subset_data[(n_train+1):n, ]
+```
+
+```{r}
+nrow(test)
+```
+
+```{r}
+#data time series
+train.ts<-ts(train)
+test.ts<-ts(test)
+data.ts<-ts(subset_data)
+```
+
+# Pemodelan Data
+
+## Model Koyck
+
+Model Koyck didasarkan pada asumsi bahwa semakin jauh jarak lag peubah independen dari periode sekarang maka semakin kecil pengaruh peubah lag terhadap peubah dependen.
+
+### Pemodelan
+
+```{r}
+#MODEL KOYCK
+model.koyck <- koyckDlm(x = train$X, y = train$Y)
+summary(model.koyck)
+AIC(model.koyck)
+BIC(model.koyck)
+```
+
+Dari hasil tersebut, didapat bahwa intercept, peubah $y_{t-1}$ dan $x_{t}$ memiliki nilai $P-Value<0.05$. Hal ini menunjukkan bahwa intercept, peubah $y_{t-1}$ dan $x_{t}$ berpengaruh signifikan terhadap $y$. Adapun model keseluruhannya adalah sebagai berikut
+
+$$
+\hat{Y_t}=4.54910-0.56825X_t+0.87326Y_{t-1}
+$$
+
+### Peramalan dan Akurasi
+
+Berikut adalah hasil peramalan y untuk 15 periode kedepan menggunakan model koyck
+
+```{r}
+fore.koyck <- forecast(model = model.koyck, x=test$X, h=15)
+fore.koyck
+mape.koyck <- MAPE(fore.koyck$forecasts, test$Y)
+mape.koyck #data test
+#akurasi data training
+GoF(model.koyck)
+```
+
+Dari nilai MAPE sebesar 0.02495405 < 0.1 dapat disimpulkan model koyck merupakan forecasting yang baik dan dapat digunakan secara efektif untuk meramalkan nilai variabel dependen pada periode mendatang.
+
+## Regression with Distributed Lag
+
+### Pemodelan (Lag=2)
+
+```{r}
+model.dlm <- dlm(x = train$X,y = train$Y , q = 1)
+summary(model.dlm)
+AIC(model.dlm)
+BIC(model.dlm)
+```
+
+Dari hasil diatas, didapat bahwa $P-value$ dari intercept, $x_{t}$ dan, $x_{t-1}<0.05$. Hal ini menunjukkan bahwa intercept, $x_{t}$, dan $x_{t-1}$ berpengaruh signifikan terhadap $y$. Adapun model keseluruhan yang terbentuk adalah sebagai berikut
+
+$$
+\hat{Y_t}=31.354-4.509X_t+2.431X_{t-1}
+$$
+
+### Peramalan dan Akurasi
+
+Berikut merupakan hasil peramalan $y$ untuk 15 periode kedepan
+
+```{r}
+fore.dlm <- forecast(model = model.dlm, x=test$X, h=15)
+fore.dlm
+mape.dlm <- MAPE(fore.dlm$forecasts, test$Y)
+mape.dlm
+#akurasi data training
+GoF(model.dlm)
+```
+
+Dari nilai MAPE sebesar 0.05567185 < 0.1 dapat disimpulkan model merupakan forecasting yang baik dan dapat digunakan secara efektif untuk meramalkan nilai variabel dependen pada periode mendatang.
+
+### *Lag* Optimum
+
+
+```{r}
+acf(train$X)
+```
+
+
+```{r}
+#penentuan lag optimum 
+finiteDLMauto(
+  formula = Y ~ X,
+  data = train,
+  q.min = 1,
+  q.max = 10,
+  model.type = "dlm",
+  error.type = "AIC",
+  trace = TRUE
+)
+
+```
+
+Berdasarkan output tersebut, lag optimum didapatkan ketika lag=10. Selanjutnya dilakukan pemodelan untuk lag=10
+
+```{r}
+#model dlm dengan lag optimum
+model.dlm2 <- dlm(x = train$X,y = train$Y , q = 10)
+summary(model.dlm2)
+AIC(model.dlm2)
+BIC(model.dlm2)
+```
+
+Dari hasil tersebut terdapat beberapa peubah yang berpengaruh signifikan terhadap taraf nyata 5% yaitu Intercept, $x_t$ , $x_{t-7}$ , $x_{t-10}$. Adapun keseluruhan model yang terbentuk adalah
+
+$$
+\hat{Y_t}=40.971-20.622X_t-18.277X_{t-7}-5.245X_{t-10}
+$$
+
+Adapun hasil peramalan 15 periode kedepan menggunakan model tersebut adalah sebagai berikut
+
+```{r}
+#peramalan dan akurasi
+fore.dlm2 <- forecast(model = model.dlm2, x=test$X, h=15)
+
+#akurasi data test
+mape.dlm2 <- MAPE(fore.dlm2$forecasts, test$Y)
+mape.dlm2
+
+#akurasi data training
+GoF(model.dlm2)
+```
+
+Dari nilai MAPE sebesar 0.03660523 < 0.1 dapat disimpulkan model merupakan forecasting yang baik dan dapat digunakan secara efektif untuk meramalkan nilai variabel dependen pada periode mendatang.
+
+## Model Autoregressive
+
+### Pemodelan
+
+```{r}
+model.ardl <- ardlDlm(formula = Y ~ X, 
+                         data = train,p = 1 , q = 1)
+summary(model.ardl)
+AIC(model.ardl)
+BIC(model.ardl)
+```
+
+Hasil di atas menunjukkan bahwa peubah, hasil uji t menunjukkan nilai-p pada peubah $y_{t-1}<0.05$ Hal ini menunjukkan bahwa peubah $y_{t-1}$ berpengaruh signifikan terhadap $y_t$. Model keseluruhannya adalah sebagai berikut:
+
+$$
+\hat{Y}=3.84416 +0.88721Y_{t-1}
+$$
+
+### Peramalan dan Akurasi
+
+```{r}
+fore.ardl <- forecast(model = model.ardl, x=test$X, h=15)
+fore.ardl
+```
+
+Data di atas merupakan hasil peramalan untuk 15 periode ke depan menggunakan Model Autoregressive dengan $p=1$ dan $q=1$.
+
+```{r}
+mape.ardl <- MAPE(fore.ardl$forecasts, test$Y)
+mape.ardl
+#akurasi data training
+GoF(model.ardl)
+```
+
+Berdasarkan akurasi di atas, terlihat bahwa nilai MAPE keduanya tidak jauh berbeda. Artinya, model regresi dengan distribusi lag ini tidak `overfitted` atau `underfitted`
+
+### *Lag* Optimum
+
+```{r}
+#penentuan lag optimum
+model.ardl.opt <- ardlBoundOrders(data = data.frame(subset_data), ic = "AIC", 
+                                  formula = Y ~ X )
+model.ardl.opt
+min_p=c()
+for(i in 1:6){
+  min_p[i]=min(model.ardl.opt$Stat.table[[i]])
+}
+q_opt=which(min_p==min(min_p, na.rm = TRUE))
+p_opt=which(model.ardl.opt$Stat.table[[q_opt]] == 
+              min(model.ardl.opt$Stat.table[[q_opt]], na.rm = TRUE))
+data.frame("q_optimum" = q_opt, "p_optimum" = p_opt, 
+           "AIC"=model.ardl.opt$min.Stat)
+```
+
+Dari tabel di atas, dapat terlihat bahwa nilai AIC terendah didapat ketika $p=15$ dan $q=5$, yaitu sebesar `124.7089`. Artinya, model autoregressive optimum didapat ketika $p=15$ dan $q=5$.
+
+## Pemodelan DLM & ARDL dengan Library `dynlm`
+
+```{r}
+#sama dengan model dlm q=1
+cons_lm1 <- dynlm(Y ~ X+L(X),data = train.ts)
+
+#sama dengan model ardl p=1 q=0
+cons_lm2 <- dynlm(Y ~ X+L(Y),data = train.ts)
+
+#sama dengan ardl p=15 q=5
+cons_lm3 <- dynlm(Y ~ X + L(X, 1:15) + L(Y, 1:5), data = train.ts)
+
+#sama dengan dlm p=2
+cons_lm4 <- dynlm(Y ~ X+L(X)+L(X,2),data = train.ts)
+```
+
+### Ringkasan Model
+
+Berikut adalah ringkasan hasil estimasi dari masing-masing model:
+
+```{r}
+summary(cons_lm1)
+summary(cons_lm2)
+summary(cons_lm3)
+summary(cons_lm4)
+```
+
+### SSE
+
+Selain ringkasan hasil, kita juga bisa menghitung nilai SSE dari masing-masing model.
+
+```{r}
+deviance(cons_lm1)
+deviance(cons_lm2)
+deviance(cons_lm3)
+deviance(cons_lm4)
+```
+
+Semakin kecil nilai SSE, berarti model lebih baik dalam menyesuaikan data (karena error lebih kecil). Model terbaik merupakan Model ke-3 dengan SSE 7.392728
+
+### Ui encomptest
+
+#### Uji Autokorelasi Residual
+
+```{r}
+#durbin watson
+dwtest(cons_lm1)
+dwtest(cons_lm2)
+dwtest(cons_lm3)
+dwtest(cons_lm4)
+```
+
+Kecuali model ke-3, semua lolos uji autokorelasi DWtest. Artinya hanya model ke 3 yang tidak terdapat Autokorelasi
+
+#### Uji Heterogenitas
+
+```{r}
+bptest(cons_lm1)
+bptest(cons_lm2)
+bptest(cons_lm3)
+bptest(cons_lm4)
+```
+
+Hanya model ke-1 dan 4 yang lolos uji Heterogenitas BPtest, artinya terdapat heteroskedastisitas pada model 2 dan 3.
+
+#### Uji Normalitas
+
+H0: Residual berdistribusi normal.
+
+H1: Residual tidak berdistribusi normal.
+
+```{r}
+shapiro.test(residuals(cons_lm1))
+shapiro.test(residuals(cons_lm2))
+shapiro.test(residuals(cons_lm3))
+shapiro.test(residuals(cons_lm4))
+```
+
+Tidak ada model yang lolos uji kenormalan Shapiro-Wilk. Artinya tidak ada residual yang menyebar normal.
+
+## Perbandingan Model
+
+Membuat tabel ringkas akurasi model berdasarkan nilai MAPE (Mean Absolute Percentage Error).
+
+```{r}
+akurasi <- matrix(c(mape.koyck, mape.dlm, mape.dlm2, mape.ardl))
+row.names(akurasi)<- c("Koyck","DLM 1","DLM 2","Autoregressive")
+colnames(akurasi) <- c("MAPE")
+akurasi
+```
+
+Berdasarkan nilai MAPE, model paling optimum didapat pada Model Koyck karena memiliki nilai MAPE yang terkecil yaitu 0.1394956.
+
+### Plot
+
+Untuk membandingkan hasil peramalan dari berbagai model (Koyck, DLM 1, DLM 2, dan ARDL) dengan data aktual, dibuat grafik garis. Visualisasi ini membantu melihat seberapa dekat hasil ramalan tiap model dengan nilai aktual.
+
+```{r}
+# Atur layout grafik tunggal
+par(mfrow = c(1, 1))
+
+# Buat sumbu X sebagai indeks waktu
+t <- 1:length(test$Y)
+
+# Plot data aktual
+plot(t, test$Y, type = "b", col = "black", ylim = range(c(test$Y, 
+                                                          fore.koyck$forecasts,
+                                                          fore.dlm$forecasts,
+                                                          fore.dlm2$forecasts,
+                                                          fore.ardl$forecasts)),
+     xlab = "Waktu (t)", ylab = "Nilai Y", main = "Perbandingan Aktual vs Ramalan Model")
+
+# Tambahkan garis ramalan dari masing-masing model
+lines(t, fore.koyck$forecasts, col = "red", lwd = 2)
+points(t, fore.koyck$forecasts, col = "red", pch = 16)
+
+lines(t, fore.dlm$forecasts, col = "blue", lwd = 2)
+points(t, fore.dlm$forecasts, col = "blue", pch = 17)
+
+lines(t, fore.dlm2$forecasts, col = "orange", lwd = 2)
+points(t, fore.dlm2$forecasts, col = "orange", pch = 18)
+
+lines(t, fore.ardl$forecasts, col = "green", lwd = 2)
+points(t, fore.ardl$forecasts, col = "green", pch = 15)
+
+# Tambahkan legenda
+legend("topleft",
+       legend = c("Aktual", "Koyck", "DLM 1", "DLM 2", "Autoregressive"),
+       col = c("black", "red", "blue", "orange", "green"),
+       lty = 1, pch = c(1, 16, 17, 18, 15),
+       cex = 0.8, bty = "n")
+
+```
+
+
+```{r}
+par(mfrow=c(1,1))  # atur layout grafik tunggal
+
+# plot data aktual
+plot(test$X, test$Y, type="b", col="black", ylim = range(c(test$Y, 
+               fore.koyck$forecasts,
+               fore.dlm$forecasts,
+               fore.dlm2$forecasts,
+               fore.ardl$forecasts))
+)
+
+# tambahkan garis ramalan dari masing-masing model
+points(test$X, fore.koyck$forecasts, col="red");   lines(test$X, fore.koyck$forecasts, col="red")
+points(test$X, fore.dlm$forecasts, col="blue");    lines(test$X, fore.dlm$forecasts, col="blue")
+points(test$X, fore.dlm2$forecasts, col="orange"); lines(test$X, fore.dlm2$forecasts, col="orange")
+points(test$X, fore.ardl$forecasts, col="green");  lines(test$X, fore.ardl$forecasts, col="green")
+
+# legenda model
+legend("topleft",
+       c("Aktual", "Koyck","DLM 1","DLM 2", "Autoregressive"),
+       lty=1, col=c("black","red","blue","orange","green"), cex=0.8)
+```
+
+Berdasarkan plot perbandingan, terlihat bahwa semua model mampu mengikuti tren data aktual, meskipun dengan tingkat kedekatan yang berbeda. Model DLM 1 (biru), Koyck (merah) dan Autoregressive (hijau) cukup konsisten mendekati data aktual, sementara DLM 2 (oranye) tampak menyimpang pada awal periode. secara keseluruhan tidak ada yang menyerupai pola data aktual.
