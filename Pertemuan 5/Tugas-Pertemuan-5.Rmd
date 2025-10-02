@@ -1,0 +1,273 @@
+---
+title: "Tugas Pertemuan 5"
+author: Zanira Husna G1401231097
+output:
+  html_document: default
+  pdf_document: default
+date: "2025-10-02"
+---
+
+```{r, warning=FALSE, message=FALSE}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+```
+
+
+## Stasioner dalam Rataan dan Ragam
+
+
+```{r}
+library(readxl)
+data <- read_xlsx("C:\\Users\\ZANIRA\\Downloads\\laporan_iklim_harian-250831182901.xlsx", skip = 258, n_max = 125)
+
+# Ganti nama kolom 1 sampai 4
+colnames(data)[1:4] <- c("TANGGAL", "TAVG", "RR", "FF_AVG")
+data$TANGGAL <- as.Date(data$TANGGAL, format = "%d-%m-%Y")
+
+# ambil kolom yang ingin diuji saja
+df <- data[, c("TANGGAL", "TAVG")]
+```
+
+```{r}
+str(df)
+```
+```{r}
+ts_data <- ts(df$TAVG)  # default freq = 1
+```
+
+### Plot *Time Series*
+
+```{r}
+plot_stas <- ts_data |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) + geom_line() + theme_bw() +
+  xlab("Obs") + ylab("Nilai")
+plot_stas
+mean(ts_data)
+```
+
+```{r}
+lattice::densityplot(as.vector(ts_data))
+```
+
+Plot deret waktu di atas menunjukkan bahwa data stasioner dalam rataan, ditandai dengan data yang menyebar di sekitar nilai tengahnya (26.1536) dan stasioner dalam ragam, ditandai dengan data berfluktuasi pada rentang yang relatif sama sepanjang waktu.
+
+### Plot ACF
+
+```{r}
+acf(ts_data)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut
+cenderung *leg off* setelah lag 2
+
+### Uji ADF
+
+Uji ADF (Augmented Dickey–Fuller) adalah uji statistik yang digunakan
+untuk memeriksa apakah suatu deret waktu stasioner dalam rataan.
+
+```{r}
+tseries::adf.test(ts_data)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.02 yang lebih
+kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa data
+**stasioner dalam rataan**. Hal ini sesuai dengan hasil eksplorasi
+menggunakan plot time series dan plot ACF.
+
+### Plot Box-Cox
+
+```{r}
+index <- seq(1:125)
+
+# Box-Cox
+bc <- boxcox(
+  ts_data ~ index,
+  lambda = seq(-10, 12, 0.01)
+)
+```
+
+
+```{r}
+# Nilai lambda optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+```
+
+
+```{r}
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+```
+
+Gambar di atas menunjukkan nilai λ optimum (rounded value) sebesar
+**2.43** dan selang kepercayaan 95% nilai memiliki batas bawah **-2.46**
+dan batas atas **7.46 **. Selang tersebut memuat nilai satu sehingga
+dapat dikatakan bahwa data  **stasioner dalam ragam**.
+
+
+### Partisi Data Deret Waktu
+
+
+membuat data menjadi time series dan membagi menjdai train 80 dan test 20
+
+```{r}
+n <- length(ts_data)
+n_train <- floor(0.8 * n)
+
+train_ts <- window(ts_data, end = c(n_train))
+test_ts  <- window(ts_data, start = c(n_train + 1))
+length(train_ts)
+```
+
+menggunakan data train untuk eksplorasi dan penanganan kestationerannya
+
+
+```{r}
+library(ggplot2)
+library(tsibble)
+
+plot_stas <- ts_data |> 
+  as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() +
+  theme_bw() +
+  xlab("Obs") + 
+  ylab("Nilai") +
+  
+  # Tambahkan garis batas
+  geom_vline(xintercept = 100, linetype = "dashed", color = "red") +
+  ggtitle("Partisi Deret Waktu: 80% Train 20% Test")
+
+plot_stas
+
+
+```
+
+### Bagian 1 : train
+
+```{r}
+#rata-rata
+mean(train_ts)
+
+#varians
+var(train_ts)
+```
+
+#### Plot Time Series
+
+```{r}
+train_ts |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() + theme_bw() +
+  xlab("Obs") + ylab("Nilai")
+```
+
+Plot deret waktu di atas menunjukkan bahwa data stasioner dalam rataan,
+ditandai dengan data yang menyebar di sekitar nilai tengahnya (26.142) dan
+stasioner dalam ragam, ditandai dengan data berfluktuasi pada rentang
+yang relatif sama sepanjang waktu.
+
+#### Plot ACF
+
+```{r}
+acf(train_ts)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut
+cenderung *leg off* setelah lag 2
+
+#### Uji ADF
+
+```{r}
+tseries::adf.test(train_ts)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.1 yang lebih
+besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa data
+**tidak stasioner dalam rataan**
+
+#### Plot Boxcox
+
+```{r}
+index <- seq(1, 100)
+
+# Box-Cox
+bc <- boxcox(
+  train_ts ~ index,
+  lambda = seq(-10, 12, by = 0.01)
+)
+```
+
+
+```{r}
+# Nilai lambda optimum (dibulatkan)
+lambda <- bc$x[which.max(bc$y)]
+lambda
+```
+
+```{r}
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum
+sebesar **2.06** dan pada selang kepercayaan 95% nilai memiliki batas
+bawah **-3.2** dan batas atas **7.5**. Selang tersebut memuat nilai
+satu sehingga dapat dikatakan bahwa data stasioner dalam
+ragam.
+
+## Penanganan Ketidakstationeran pada Rataan
+
+### Differencing
+```{r}
+# Differencing pertama pada postrend
+postrend_diff1 <- diff(train_ts, differences = 1)
+
+# Plot hasil differencing
+ts.plot(postrend_diff1,
+        main = "First-order Differencing dari postrend",
+        col = "blue", lwd = 2)
+```
+
+### Plot ACF
+
+```{r}
+acf(postrend_diff1)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut
+cenderung *leg off* setelah lag 2
+
+### Uji ADF
+
+```{r}
+adf.test(postrend_diff1)
+```
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih
+kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa
+**data sudah stasioner dalam rataan**. Hal ini sesuai dengan hasil
+eksplorasi menggunakan plot time series dan plot ACF.
